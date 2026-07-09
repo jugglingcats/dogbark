@@ -1,0 +1,17 @@
+[project]
+name = "dogbark"
+version = "0.1.0"
+description = "Detect and record dog barking using YAMNet"
+dependencies = [
+    "numpy>=2.5.1",
+    "sounddevice>=0.5.5",
+    "soundfile>=0.14.0",
+    "tensorflow>=2.21.0",
+    "tensorflow-hub>=0.16.1",
+    "scipy>=1.18.0",
+]
+requires-python = ">=3.13.14"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
