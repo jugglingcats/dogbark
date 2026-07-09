@@ -10,7 +10,7 @@ dependencies = [
     "tensorflow-hub>=0.16.1",
     "scipy>=1.18.0",
 ]
-requires-python = ">=3.13.14"
+requires-python = ">=3.13.5"
 
 [build-system]
 requires = ["setuptools>=61.0"]
