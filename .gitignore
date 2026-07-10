@@ -1,0 +1,18 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Webapp build artifacts
+# (Sources under web/ are tracked, including web/public/ example fixtures.)
+node_modules/
+web/dist/
+
+# Detector runtime data — root only. The committed example data under
+# web/public/ (example.csv + recordings/) is NOT ignored.
+/events.csv
+/recordings/
+
+# IDE / OS
+.idea/
+.DS_Store

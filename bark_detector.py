@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import argparse
 import csv
+import http.server
+import mimetypes
+import os
 import queue
 import sys
+import threading
 import time
+import urllib.parse
 from collections import deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -40,6 +45,22 @@ MODEL_URL = "https://tfhub.dev/google/yamnet/1"
 RECORDINGS_DIR = Path("recordings")
 EVENTS_CSV = Path("events.csv")
 
+DEFAULT_PORT = 8000
+WEB_DIST = Path(__file__).resolve().parent / "web" / "dist"
+
+NOT_BUILT_HTML = """<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><title>Dog Bark Monitor</title></head>
+  <body style="font-family: system-ui, sans-serif; max-width: 36rem; margin: 2rem auto; line-height: 1.5">
+    <h1>🐶 Webapp not built</h1>
+    <p>The detector is running, but the web dashboard hasn't been built yet.</p>
+    <p>Build it with:</p>
+    <pre style="background: #f4f4f5; padding: 0.75rem; border-radius: 0.25rem">cd web &amp;&amp; pnpm install &amp;&amp; pnpm build</pre>
+    <p>Then restart the detector.</p>
+  </body>
+</html>
+"""
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Detect and record dog barking."
@@ -68,6 +89,17 @@ def parse_args() -> argparse.Namespace:
         "--list-classes",
         action="store_true",
         help="List YAMNet class names and exit.",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=DEFAULT_PORT,
+        help=f"Port for the web dashboard; default {DEFAULT_PORT}.",
+    )
+    parser.add_argument(
+        "--no-web",
+        action="store_true",
+        help="Do not start the web dashboard server.",
     )
     return parser.parse_args()
 
@@ -137,6 +169,148 @@ def save_event(
     )
 
 
+# --- Web dashboard ---------------------------------------------------------
+# Register MIME types a minimal OS image may not know. Without these the SPA's
+# ES modules are served as application/octet-stream and the page stays blank.
+mimetypes.add_type("text/javascript", ".js")
+mimetypes.add_type("text/javascript", ".mjs")
+mimetypes.add_type("text/css", ".css")
+mimetypes.add_type("audio/wav", ".wav")
+mimetypes.add_type("application/json", ".json")
+mimetypes.add_type("image/svg+xml", ".svg")
+mimetypes.add_type("font/woff2", ".woff2")
+
+
+class BarkHandler(http.server.SimpleHTTPRequestHandler):
+    """Serves the built dashboard, the live events.csv, and recorded audio."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=str(WEB_DIST), **kwargs)
+
+    def do_GET(self):
+        url_path = urllib.parse.urlparse(self.path).path
+        is_data_route = (
+            url_path == "/events.csv" or url_path.startswith("/recordings")
+        )
+        if not WEB_DIST.exists() and not is_data_route:
+            self._respond_html(NOT_BUILT_HTML)
+            return
+        super().do_GET()
+
+    def translate_path(self, path):
+        url_path = urllib.parse.unquote(urllib.parse.urlparse(path).path)
+
+        if url_path == "/events.csv":
+            return str(EVENTS_CSV.resolve())
+
+        if url_path.startswith("/recordings/"):
+            root = RECORDINGS_DIR.resolve()
+            target = (root / url_path[len("/recordings/"):]).resolve()
+            if target.is_relative_to(root):
+                return str(target)
+            return str(root / "__blocked__")  # path traversal → 404
+
+        filesystem_path = super().translate_path(path)
+        # SPA fallback: an unknown route with no file extension serves index.html.
+        if not os.path.exists(filesystem_path):
+            last_segment = url_path.rstrip("/").rsplit("/", 1)[-1]
+            if last_segment and "." not in last_segment:
+                return os.path.join(str(WEB_DIST), "index.html")
+        return filesystem_path
+
+    def send_head(self):
+        # Add HTTP Range support (Python's SimpleHTTPRequestHandler lacks it).
+        # <audio> seeks via Range; Safari in particular insists on 206 responses.
+        path = self.translate_path(self.path)
+        if not os.path.isfile(path):
+            return super().send_head()  # directories, index.html listing, 404s
+
+        range_header = self.headers.get("Range")
+        if not range_header:
+            return super().send_head()  # normal full-content GET/HEAD, 304, etc.
+
+        try:
+            stat = os.stat(path)
+        except OSError:
+            return self.send_error(404, "Not found")
+
+        start, end = self._parse_range(range_header, stat.st_size)
+        if start is None:
+            return super().send_head()  # malformed Range → serve full content
+
+        end = min(end, stat.st_size - 1)
+        self.send_response(206)
+        self.send_header("Content-Type", self.guess_type(path))
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Range", f"bytes {start}-{end}/{stat.st_size}")
+        self.send_header("Content-Length", str(end - start + 1))
+        self.send_header("Last-Modified", self.date_time_string(stat.st_mtime))
+        self.end_headers()
+        if self.command != "HEAD":
+            with open(path, "rb") as handle:
+                handle.seek(start)
+                self.wfile.write(handle.read(end - start + 1))
+        return None
+
+    @staticmethod
+    def _parse_range(header, size):
+        """Parse a "bytes=..." Range header into (start, end) inclusive, or
+        (None, None) if absent/malformed. end may exceed size; the caller clamps."""
+        try:
+            unit, spec = header.split("=", 1)
+            if unit.strip() != "bytes":
+                return None, None
+            start_str, end_str = spec.split("-", 1)
+            if start_str:
+                start = int(start_str)
+                end = int(end_str) if end_str else size - 1
+            else:
+                # suffix range: last N bytes
+                start = max(0, size - int(end_str))
+                end = size - 1
+            if start > end or start >= size:
+                return None, None
+            return start, end
+        except (ValueError, AttributeError):
+            return None, None
+
+    def end_headers(self):
+        url_path = urllib.parse.urlparse(self.path).path
+        last_segment = url_path.rsplit("/", 1)[-1]
+        is_html = url_path == "/" or url_path.endswith(".html") or (
+            last_segment and "." not in last_segment
+        )
+        # Never cache the SPA shell or the live CSV; hashed assets cache fine.
+        if is_html or url_path == "/events.csv":
+            self.send_header("Cache-Control", "no-cache")
+        super().end_headers()
+
+    def _respond_html(self, body):
+        encoded = body.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(encoded)
+
+    def log_message(self, fmt, *args):
+        sys.stderr.write("[web] %s - %s\n" % (self.address_string(), fmt % args))
+
+
+def start_web_server(port):
+    httpd = http.server.ThreadingHTTPServer(("0.0.0.0", port), BarkHandler)
+    thread = threading.Thread(
+        target=httpd.serve_forever, daemon=True, name="dogbark-web"
+    )
+    thread.start()
+    print(
+        f"Serving dashboard at http://localhost:{port}/ "
+        f"(also /events.csv and /recordings/)"
+    )
+    return httpd
+
+
 def main() -> None:
     args = parse_args()
 
@@ -188,6 +362,13 @@ def main() -> None:
         f"Input: {device_info['name']} at {input_rate} Hz; "
         f"analysis at {ANALYSIS_RATE} Hz"
     )
+
+    httpd = None
+    if not args.no_web:
+        try:
+            httpd = start_web_server(args.port)
+        except OSError as exc:
+            print(f"Could not start web dashboard: {exc}", file=sys.stderr)
 
     pre_roll_chunk_count = max(
         1,
@@ -354,6 +535,9 @@ def main() -> None:
 
     except KeyboardInterrupt:
         print("\nStopping.")
+
+        if httpd is not None:
+            httpd.shutdown()
 
         if active and event_started_at is not None:
             save_event(
