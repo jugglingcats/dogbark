@@ -60,3 +60,12 @@ export async function loadEvents(): Promise<BarkEvent[]> {
   }
   return parseEvents(await response.text())
 }
+
+// Delete a recording (and its CSV row) on the detector backend. Throws in dev —
+// Vite serves the example data and has no DELETE handler.
+export async function deleteRecording(audioPath: string): Promise<void> {
+  const response = await fetch(audioUrlFor(audioPath), { method: 'DELETE' })
+  if (!response.ok) {
+    throw new Error(`Failed to delete recording (HTTP ${response.status})`)
+  }
+}

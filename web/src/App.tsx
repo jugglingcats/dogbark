@@ -57,6 +57,10 @@ export default function App() {
     0,
   )
 
+  const handleDelete = (audioPath: string) => {
+    setEvents((prev) => prev.filter((event) => event.audioPath !== audioPath))
+  }
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
       <header className="mb-6 flex items-end justify-between gap-4">
@@ -99,7 +103,7 @@ export default function App() {
 
           <section className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-700">
             <h2 className="mb-3 font-medium">Events</h2>
-            <EventsTable events={events} />
+            <EventsTable events={events} onDelete={handleDelete} />
           </section>
         </>
       )}

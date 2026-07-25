@@ -1,9 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import type { BarkEvent } from '../lib/csv'
-import { audioUrlFor } from '../lib/csv'
+import { audioUrlFor, deleteRecording } from '../lib/csv'
 
-function EventRow({ event }: { event: BarkEvent }) {
+function EventRow({
+  event,
+  onDelete,
+}: {
+  event: BarkEvent
+  onDelete?: (audioPath: string) => void
+}) {
   const [open, setOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const audioRef = useRef<HTMLAudioElement>(null)
 
   // Start playback as soon as the player is revealed — the "Play" click is the
@@ -14,6 +21,23 @@ function EventRow({ event }: { event: BarkEvent }) {
       audioRef.current?.play().catch(() => {})
     }
   }, [open])
+
+  async function handleDelete() {
+    if (
+      !window.confirm('Delete this recording? This removes the WAV and the log row.')
+    ) {
+      return
+    }
+    setDeleting(true)
+    try {
+      await deleteRecording(event.audioPath)
+      onDelete?.(event.audioPath)
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err))
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   return (
     <>
@@ -28,13 +52,23 @@ function EventRow({ event }: { event: BarkEvent }) {
           {(event.peakConfidence * 100).toFixed(0)}%
         </td>
         <td className="px-3 py-2 text-center">
-          <button
-            type="button"
-            onClick={() => setOpen((value) => !value)}
-            className="rounded bg-neutral-200 px-2 py-1 text-xs hover:bg-neutral-300 dark:bg-neutral-700 dark:hover:bg-neutral-600"
-          >
-            {open ? 'Hide' : 'Play'}
-          </button>
+          <span className="inline-flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setOpen((value) => !value)}
+              className="rounded bg-neutral-200 px-2 py-1 text-xs hover:bg-neutral-300 dark:bg-neutral-700 dark:hover:bg-neutral-600"
+            >
+              {open ? 'Hide' : 'Play'}
+            </button>
+            <button
+              type="button"
+              onClick={handleDelete}
+              disabled={deleting}
+              className="rounded bg-red-100 px-2 py-1 text-xs text-red-700 hover:bg-red-200 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-red-900 dark:text-red-200 dark:hover:bg-red-800"
+            >
+              {deleting ? 'Deleting…' : 'Delete'}
+            </button>
+          </span>
         </td>
       </tr>
       {open && (
@@ -48,7 +82,13 @@ function EventRow({ event }: { event: BarkEvent }) {
   )
 }
 
-export default function EventsTable({ events }: { events: BarkEvent[] }) {
+export default function EventsTable({
+  events,
+  onDelete,
+}: {
+  events: BarkEvent[]
+  onDelete?: (audioPath: string) => void
+}) {
   return (
     <table className="w-full text-sm">
       <thead>
@@ -61,7 +101,7 @@ export default function EventsTable({ events }: { events: BarkEvent[] }) {
       </thead>
       <tbody>
         {events.map((event) => (
-          <EventRow key={event.audioPath} event={event} />
+          <EventRow key={event.audioPath} event={event} onDelete={onDelete} />
         ))}
       </tbody>
     </table>

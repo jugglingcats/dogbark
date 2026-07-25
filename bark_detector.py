@@ -48,6 +48,10 @@ EVENTS_CSV = Path("events.csv")
 DEFAULT_PORT = 8000
 WEB_DIST = Path(__file__).resolve().parent / "web" / "dist"
 
+# Guards events.csv against concurrent appends (save_event on the main loop) and
+# rewrites (the DELETE handler on the web thread) — the server is threaded.
+_csv_lock = threading.Lock()
+
 NOT_BUILT_HTML = """<!doctype html>
 <html lang="en">
   <head><meta charset="utf-8"><title>Dog Bark Monitor</title></head>
@@ -139,34 +143,72 @@ def save_event(
 
     new_csv = not EVENTS_CSV.exists()
 
-    with EVENTS_CSV.open("a", newline="", encoding="utf-8") as file:
-        writer = csv.writer(file)
+    with _csv_lock:
+        with EVENTS_CSV.open("a", newline="", encoding="utf-8") as file:
+            writer = csv.writer(file)
 
-        if new_csv:
+            if new_csv:
+                writer.writerow(
+                    [
+                        "started_at_utc",
+                        "ended_at_utc",
+                        "duration_seconds",
+                        "peak_confidence",
+                        "audio_path",
+                    ]
+                )
+
             writer.writerow(
                 [
-                    "started_at_utc",
-                    "ended_at_utc",
-                    "duration_seconds",
-                    "peak_confidence",
-                    "audio_path",
+                    started_at.isoformat(),
+                    ended_at.isoformat(),
+                    f"{duration:.2f}",
+                    f"{peak_confidence:.3f}",
+                    str(audio_path),
                 ]
             )
-
-        writer.writerow(
-            [
-                started_at.isoformat(),
-                ended_at.isoformat(),
-                f"{duration:.2f}",
-                f"{peak_confidence:.3f}",
-                str(audio_path),
-            ]
-        )
 
     print(
         f"\nSaved {audio_path} "
         f"({duration:.1f}s, peak {peak_confidence:.2f})"
     )
+
+
+def delete_event_row(target_path: Path) -> bool:
+    """Remove every events.csv row whose audio_path resolves to target_path.
+
+    Matching is by resolved path, not raw string: on Windows the stored
+    audio_path uses backslashes while the incoming DELETE URL uses forward
+    slashes. The rewrite is atomic (temp file + os.replace) so a crash can't
+    leave a half-written log. Returns whether any row was removed.
+    """
+    with _csv_lock:
+        if not EVENTS_CSV.exists():
+            return False
+
+        with EVENTS_CSV.open("r", newline="", encoding="utf-8") as file:
+            rows = list(csv.reader(file))
+
+        if not rows:
+            return False
+
+        header, body = rows[0], rows[1:]
+        target_resolved = target_path.resolve()
+        kept = [
+            row
+            for row in body
+            if len(row) < 5 or Path(row[4]).resolve() != target_resolved
+        ]
+        if len(kept) == len(body):
+            return False  # nothing matched; leave the file untouched
+
+        tmp = EVENTS_CSV.with_name(EVENTS_CSV.name + ".tmp")
+        with tmp.open("w", newline="", encoding="utf-8") as out:
+            writer = csv.writer(out)
+            writer.writerow(header)
+            writer.writerows(kept)
+        os.replace(tmp, EVENTS_CSV)
+        return True
 
 
 # --- Web dashboard ---------------------------------------------------------
@@ -196,6 +238,37 @@ class BarkHandler(http.server.SimpleHTTPRequestHandler):
             self._respond_html(NOT_BUILT_HTML)
             return
         super().do_GET()
+
+    def do_DELETE(self):
+        """DELETE /recordings/<day>/<file>.wav — remove the WAV and its CSV row."""
+        url_path = urllib.parse.urlparse(self.path).path
+        if not url_path.startswith("/recordings/"):
+            self.send_error(404, "Not found")
+            return
+
+        root = RECORDINGS_DIR.resolve()
+        target = (root / url_path[len("/recordings/"):]).resolve()
+        if not target.is_relative_to(root):
+            self.send_error(400, "Invalid path")  # traversal attempt
+            return
+
+        # Update the CSV first (atomic rewrite). An orphaned file is harmless;
+        # an orphaned CSV row would make the Play button 404.
+        removed_row = delete_event_row(target)
+
+        file_existed = target.is_file()
+        if file_existed:
+            try:
+                target.unlink()
+            except OSError:
+                pass  # best-effort; the row is already gone
+
+        if not removed_row and not file_existed:
+            self.send_error(404, "Not found")
+            return
+
+        self.send_response(204)
+        self.end_headers()
 
     def translate_path(self, path):
         url_path = urllib.parse.unquote(urllib.parse.urlparse(path).path)
