@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
-import BarksPerDayChart from './components/BarksPerDayChart'
-import ConfidenceSeries from './components/ConfidenceSeries'
+import BarksTimeline from './components/BarksTimeline'
 import EventsTable from './components/EventsTable'
 import { loadEvents, type BarkEvent } from './lib/csv'
 
@@ -90,15 +89,9 @@ export default function App() {
         <p className="py-12 text-center text-neutral-500">No barks recorded yet.</p>
       ) : (
         <>
-          <section className="mb-8 grid gap-6 md:grid-cols-2">
-            <div className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-700">
-              <h2 className="mb-2 font-medium">Barks per day</h2>
-              <BarksPerDayChart events={events} />
-            </div>
-            <div className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-700">
-              <h2 className="mb-2 font-medium">Confidence over time</h2>
-              <ConfidenceSeries events={events} />
-            </div>
+          <section className="mb-8 rounded-lg border border-neutral-200 p-4 dark:border-neutral-700">
+            <h2 className="mb-3 font-medium">Barks over time</h2>
+            <BarksTimeline events={events} />
           </section>
 
           <section className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-700">

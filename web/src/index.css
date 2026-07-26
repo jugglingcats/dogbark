@@ -8,3 +8,98 @@ body {
   margin: 0;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
+
+/* BarksTimeline chart — colors as roles so light/dark swap in one place.
+   Furniture stays neutral (gray); only the data marks wear the brand hue. */
+.bt-root {
+  --bk-surface: #ffffff;
+  --bk-ink: #171717;
+  --bk-secondary: #404040;
+  --bk-muted: #737373;
+  --bk-grid: #ececec;
+  --bk-baseline: #d4d4d4;
+  --bk-divider: #efefef;
+  --bk-day-rule: #d4d4d4;
+  --bk-bar: #aa3bff;
+  --bk-bar-hover: #c98cff;
+  --bk-tooltip-bg: #ffffff;
+  --bk-tooltip-border: #e5e5e5;
+}
+@media (prefers-color-scheme: dark) {
+  .bt-root {
+    --bk-surface: #0a0a0a;
+    --bk-ink: #fafafa;
+    --bk-secondary: #d4d4d4;
+    --bk-muted: #a3a3a3;
+    --bk-grid: #262626;
+    --bk-baseline: #404040;
+    --bk-divider: #1f1f1f;
+    --bk-day-rule: #404040;
+    --bk-bar: #aa3bff;
+    --bk-bar-hover: #c98cff;
+    --bk-tooltip-bg: #171717;
+    --bk-tooltip-border: #404040;
+  }
+}
+.bt-axis {
+  fill: var(--bk-muted);
+  font-variant-numeric: tabular-nums;
+}
+.bt-grid {
+  stroke: var(--bk-grid);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.bt-baseline {
+  stroke: var(--bk-baseline);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.bt-divider {
+  stroke: var(--bk-divider);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.bt-tick {
+  stroke: var(--bk-baseline);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.bt-day-rule {
+  stroke: var(--bk-day-rule);
+  stroke-width: 1;
+}
+.bt-day-total {
+  fill: var(--bk-ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.bt-day-date {
+  fill: var(--bk-secondary);
+}
+.bt-bar {
+  fill: var(--bk-bar);
+}
+.bt-bar-hover {
+  fill: var(--bk-bar-hover);
+}
+.bt-tooltip {
+  position: absolute;
+  width: 156px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  background: var(--bk-tooltip-bg);
+  border: 1px solid var(--bk-tooltip-border);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  pointer-events: none;
+}
+.bt-tooltip-when {
+  font-size: 11px;
+  color: var(--bk-muted);
+}
+.bt-tooltip-count {
+  margin-top: 1px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--bk-ink);
+}
