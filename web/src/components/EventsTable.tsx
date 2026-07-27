@@ -51,6 +51,9 @@ function EventRow({
         <td className="px-3 py-2 text-right tabular-nums">
           {(event.peakConfidence * 100).toFixed(0)}%
         </td>
+        <td className="px-3 py-2 text-right tabular-nums text-neutral-400 dark:text-neutral-500">
+          {event.levelDbfs != null ? event.levelDbfs.toFixed(1) : '—'}
+        </td>
         <td className="px-3 py-2 text-center">
           <span className="inline-flex items-center gap-2">
             <button
@@ -73,7 +76,7 @@ function EventRow({
       </tr>
       {open && (
         <tr className="border-t border-neutral-200 dark:border-neutral-700">
-          <td colSpan={4} className="px-3 py-2">
+          <td colSpan={5} className="px-3 py-2">
             <audio ref={audioRef} controls src={audioUrlFor(event.audioPath)} className="w-full" />
           </td>
         </tr>
@@ -96,6 +99,7 @@ export default function EventsTable({
           <th className="px-3 py-2 font-medium">When (local)</th>
           <th className="px-3 py-2 text-right font-medium">Duration</th>
           <th className="px-3 py-2 text-right font-medium">Confidence</th>
+          <th className="px-3 py-2 text-right font-medium">Level (dBFS)</th>
           <th className="px-3 py-2 text-center font-medium">Audio</th>
         </tr>
       </thead>

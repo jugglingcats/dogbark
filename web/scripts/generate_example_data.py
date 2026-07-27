@@ -6,9 +6,11 @@ Run from the repo root:
 
 Writes web/public/example.csv and web/public/recordings/<date>/<file>.wav.
 The CSV matches the exact format written by bark_detector.save_event():
-  started_at_utc,ended_at_utc,duration_seconds,peak_confidence,audio_path
+  started_at_utc,ended_at_utc,duration_seconds,peak_confidence,audio_path,level_dbfs
 where timestamps are datetime.now(timezone.utc).isoformat() (6-digit micros,
-"+00:00") and audio_path is relative ("recordings/DATE/FILE.wav").
+"+00:00") and audio_path is relative ("recordings/DATE/FILE.wav"). Older
+events.csv files written before the level_dbfs column exist have only the
+first five fields; the dashboard parser accepts both shapes.
 """
 from __future__ import annotations
 
@@ -56,6 +58,12 @@ def make_bark_audio(duration: float, rng: np.random.Generator) -> np.ndarray:
     return signal
 
 
+def peak_dbfs(audio: np.ndarray) -> float:
+    """Peak level in dBFS; mirrors bark_detector.peak_dbfs."""
+    peak = float(np.max(np.abs(audio))) if audio.size else 0.0
+    return -120.0 if peak <= 0.0 else 20.0 * math.log10(peak)
+
+
 def main() -> None:
     rng = random.Random(SEED)
     nrng = np.random.default_rng(SEED)
@@ -89,6 +97,7 @@ def main() -> None:
                 "duration_seconds",
                 "peak_confidence",
                 "audio_path",
+                "level_dbfs",
             ]
         )
         for started, duration, confidence in events:
@@ -98,9 +107,10 @@ def main() -> None:
             audio_path = f"recordings/{day_str}/{filename}"
             wav_path = PUBLIC_DIR / audio_path
             wav_path.parent.mkdir(parents=True, exist_ok=True)
+            signal = make_bark_audio(duration, nrng)
             sf.write(
                 wav_path,
-                make_bark_audio(duration, nrng),
+                signal,
                 ANALYSIS_RATE,
                 subtype="PCM_16",
             )
@@ -111,6 +121,7 @@ def main() -> None:
                     f"{duration:.2f}",
                     f"{confidence:.3f}",
                     audio_path,
+                    f"{peak_dbfs(signal):.1f}",
                 ]
             )
 

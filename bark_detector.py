@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import http.server
+import math
 import mimetypes
 import os
 import queue
@@ -116,6 +117,19 @@ def load_class_names(model) -> list[str]:
         return [row["display_name"] for row in rows]
 
 
+def peak_dbfs(audio: np.ndarray) -> float:
+    """Peak sound level in dBFS (0 = digital full scale).
+
+    The microphone is uncalibrated, so this is a relative level, not an
+    absolute SPL. Peak (not RMS) so the pre/post-roll silence around the bark
+    can't drag the reading down. -120 is a silence floor; log10(0) is -inf.
+    """
+    peak = float(np.max(np.abs(audio))) if audio.size else 0.0
+    if peak <= 0.0:
+        return -120.0
+    return 20.0 * math.log10(peak)
+
+
 def save_event(
     chunks: list[np.ndarray],
     started_at: datetime,
@@ -127,6 +141,7 @@ def save_event(
     audio = np.concatenate(chunks)
     duration = len(audio) / ANALYSIS_RATE
     ended_at = started_at + timedelta(seconds=duration)
+    level_dbfs = peak_dbfs(audio)
 
     day_dir = RECORDINGS_DIR / started_at.strftime("%Y-%m-%d")
     day_dir.mkdir(parents=True, exist_ok=True)
@@ -155,6 +170,7 @@ def save_event(
                         "duration_seconds",
                         "peak_confidence",
                         "audio_path",
+                        "level_dbfs",
                     ]
                 )
 
@@ -165,12 +181,14 @@ def save_event(
                     f"{duration:.2f}",
                     f"{peak_confidence:.3f}",
                     str(audio_path),
+                    f"{level_dbfs:.1f}",
                 ]
             )
 
     print(
         f"\nSaved {audio_path} "
-        f"({duration:.1f}s, peak {peak_confidence:.2f})"
+        f"({duration:.1f}s, {level_dbfs:.0f} dBFS, "
+        f"peak {peak_confidence:.2f})"
     )
 
 

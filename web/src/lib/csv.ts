@@ -4,6 +4,9 @@ export type BarkEvent = {
   durationSeconds: number
   peakConfidence: number
   audioPath: string
+  // Optional because events.csv predates this column. Historical rows have
+  // only the first five fields; the parser leaves this undefined for them.
+  levelDbfs?: number
 }
 
 // Dev serves the committed example data; prod serves the detector's live log.
@@ -25,11 +28,15 @@ export function parseEvents(text: string): BarkEvent[] {
     if (!trimmed || trimmed.startsWith('started_at_utc')) continue
 
     const fields = trimmed.split(',')
-    if (fields.length !== 5) continue
+    // Accept the original 5-field rows (no level) and the current 6-field
+    // rows. audio_path stays at index 4 in both so older logs still load.
+    if (fields.length < 5) continue
 
     const durationSeconds = Number(fields[2])
     const peakConfidence = Number(fields[3])
     if (Number.isNaN(durationSeconds) || Number.isNaN(peakConfidence)) continue
+
+    const rawLevel = fields.length >= 6 ? Number(fields[5]) : NaN
 
     events.push({
       startedAtUtc: normalizeTimestamp(fields[0]),
@@ -37,6 +44,7 @@ export function parseEvents(text: string): BarkEvent[] {
       durationSeconds,
       peakConfidence,
       audioPath: fields[4],
+      levelDbfs: Number.isFinite(rawLevel) ? rawLevel : undefined,
     })
   }
 
