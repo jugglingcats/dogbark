@@ -17,6 +17,7 @@ from __future__ import annotations
 import csv
 import math
 import random
+import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -26,6 +27,13 @@ import soundfile as sf
 ANALYSIS_RATE = 16_000
 DAYS = 7
 SEED = 42
+
+# Real barking arrives in bursts: a dog sets off, goes quiet for a bit, then
+# starts again. Generate that shape so the dashboard's incident-grouping slider
+# (0-5 minutes) has something to roll up in dev.
+BURSTS_PER_DAY = (2, 5)
+RECORDINGS_PER_BURST = (1, 6)
+GAP_WITHIN_BURST_SECONDS = (5.0, 200.0)
 
 HERE = Path(__file__).resolve().parent
 PUBLIC_DIR = HERE.parent / "public"
@@ -72,8 +80,7 @@ def main() -> None:
     events: list[tuple[datetime, float, float]] = []
     for day_offset in range(DAYS):
         day = now - timedelta(days=day_offset)
-        count = rng.randint(3, 11)  # some days are busier than others
-        for _ in range(count):
+        for _ in range(rng.randint(*BURSTS_PER_DAY)):
             started = day.replace(
                 hour=rng.randint(6, 21),
                 minute=rng.randint(0, 59),
@@ -81,12 +88,21 @@ def main() -> None:
                 microsecond=rng.randint(0, 999_999),
                 tzinfo=timezone.utc,
             )
-            duration = round(rng.uniform(0.5, 6.0), 2)
-            confidence = round(rng.uniform(0.20, 0.95), 3)
-            events.append((started, duration, confidence))
+            for _ in range(rng.randint(*RECORDINGS_PER_BURST)):
+                duration = round(rng.uniform(0.5, 6.0), 2)
+                confidence = round(rng.uniform(0.20, 0.95), 3)
+                events.append((started, duration, confidence))
+                # Next recording in the burst starts after the current one ends.
+                started += timedelta(
+                    seconds=duration + rng.uniform(*GAP_WITHIN_BURST_SECONDS)
+                )
 
     events.sort(key=lambda item: item[0])
 
+    # Filenames are timestamped from "now", so a re-run would otherwise leave
+    # the previous run's WAVs behind as orphans with no CSV row.
+    if RECORDINGS_DIR.exists():
+        shutil.rmtree(RECORDINGS_DIR)
     RECORDINGS_DIR.mkdir(parents=True, exist_ok=True)
     with EXAMPLE_CSV.open("w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)

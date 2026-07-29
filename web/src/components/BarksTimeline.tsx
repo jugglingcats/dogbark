@@ -1,12 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { BarkEvent } from '../lib/csv'
 
-// A single full-width chart that buckets every bark by the local hour it
-// started in and draws one thin bar per hour. Each calendar day gets a header
-// band across the top with that day's total sitting on a horizontal rule.
-// The time axis is laid out at a fixed 10px per hour, so once there is more
-// than a screen's worth of days the plot scrolls horizontally and snaps to the
-// latest data on load.
+// A single full-width chart that buckets every item by the local hour it
+// started in and draws one thin bar per hour. Items are individual recordings
+// when grouping is off, or rolled-up incidents when it is on — the chart only
+// needs a start timestamp, so the same code serves both. Each calendar day gets
+// a header band across the top with that day's total sitting on a horizontal
+// rule. The time axis is laid out at a fixed 10px per hour, so once there is
+// more than a screen's worth of days the plot scrolls horizontally and snaps to
+// the latest data on load.
+
+// Anything with a start timestamp: a BarkEvent or a BarkGroup.
+type TimelineItem = { startedAtUtc: string }
+
+type Unit = { one: string; many: string }
+
+const DEFAULT_UNIT: Unit = { one: 'bark', many: 'barks' }
 
 const HOUR_PX = 10 // requirement: ~10px per hour
 const DAY_BAND_H = 44
@@ -35,7 +43,7 @@ function localDayStartMs(iso: string): number {
   return d.getTime()
 }
 
-function bucketize(events: BarkEvent[]): Buckets | null {
+function bucketize(events: TimelineItem[]): Buckets | null {
   if (events.length === 0) return null
 
   let firstDay = Infinity
@@ -130,7 +138,13 @@ function topRoundedBarPath(
 
 type Hover = { hour: number; left: number; top: number }
 
-export default function BarksTimeline({ events }: { events: BarkEvent[] }) {
+export default function BarksTimeline({
+  events,
+  unit = DEFAULT_UNIT,
+}: {
+  events: TimelineItem[]
+  unit?: Unit
+}) {
   const data = useMemo(() => bucketize(events), [events])
   const scrollRef = useRef<HTMLDivElement>(null)
   // "Stick to the end": true until the user scrolls away from the latest data,
@@ -221,13 +235,13 @@ export default function BarksTimeline({ events }: { events: BarkEvent[] }) {
             width={svgWidth}
             height={TOTAL_H}
             role="img"
-            aria-label="Number of barks per hour"
+            aria-label={`Number of ${unit.many} per hour`}
             onMouseLeave={() => setHover(null)}
             style={{ display: 'block' }}
           >
-            <title>Barks per hour</title>
+            <title>{`${unit.many[0].toUpperCase()}${unit.many.slice(1)} per hour`}</title>
             <desc>
-              Bar chart of barks per hour from {data.numDays} day
+              Bar chart of {unit.many} per hour from {data.numDays} day
               {data.numDays === 1 ? '' : 's'} of recordings.
             </desc>
 
@@ -274,7 +288,7 @@ export default function BarksTimeline({ events }: { events: BarkEvent[] }) {
               const x0 = d * 24 * HOUR_PX
               const dayWidth = 24 * HOUR_PX
               const center = x0 + dayWidth / 2
-              const label = `${total} ${total === 1 ? 'bark' : 'barks'}`
+              const label = `${total} ${total === 1 ? unit.one : unit.many}`
               // Leave a gap in the rule where the total sits.
               const gap = label.length * 6.4 + 12
               const date = new Date(data.firstDay + d * DAY_MS).toLocaleDateString(
@@ -391,7 +405,7 @@ export default function BarksTimeline({ events }: { events: BarkEvent[] }) {
                 {hoveredDate} · {pad2(hoveredHourOfDay)}:00
               </div>
               <div className="bt-tooltip-count">
-                {hoveredCount} {hoveredCount === 1 ? 'bark' : 'barks'}
+                {hoveredCount} {hoveredCount === 1 ? unit.one : unit.many}
               </div>
             </div>
           )}
