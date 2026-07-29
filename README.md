@@ -63,6 +63,13 @@ python bark_detector.py --list-devices  # find your --device index
 
 Open `http://<pi-ip>:8000` in a browser. The dashboard shows barks-per-day and confidence charts, a sortable event table, and per-event audio playback; it auto-refreshes every ~20s.
 
+### Incident grouping
+
+Individual recordings are barking *episodes*, not single barks (see [How it works](#how-it-works)), but a dog that sets off repeatedly still produces a long list of them. The **Group into incidents** slider (0–5 minutes) rolls nearby recordings up for coarse-grained reporting:
+
+- **0 (default)** — no grouping; every recording is listed and counted on its own.
+- **1–5** — recordings separated by less than the selected number of minutes of quiet are counted as a single incident. The chart counts incidents rather than recordings, and each table row summarises one incident (start time, number of recordings, total span, peak confidence/level) and expands to play the individual clips.
+
 ## Develop the dashboard locally (no detector needed)
 
 ```bash
@@ -71,7 +78,7 @@ pnpm install     # first time
 pnpm dev         # http://localhost:5173, reads web/public/example.csv
 ```
 
-`web/public/example.csv` and `web/public/recordings/` are committed example data (52 events over a week) so the UI is testable without a microphone. Regenerate them with:
+`web/public/example.csv` and `web/public/recordings/` are locally generated example data (a week of barking, produced in bursts so the incident-grouping slider has something to roll up) so the UI is testable without a microphone. They are gitignored — generate them with:
 
 ```bash
 python web/scripts/generate_example_data.py
